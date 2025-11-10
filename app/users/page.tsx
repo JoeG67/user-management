@@ -1,38 +1,53 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getUsers } from "@/lib/api";
 import AddUser from "@/components/addUser";
 import EditUser from "@/components/editUser";
-import {Dialog, DialogTrigger, DialogTitle, DialogContent} from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogTitle,
+  DialogContent,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Plus, Loader2, AlertTriangle, Trash2, Edit2 } from "lucide-react";
 import { useDeleteUser } from "@/lib/hooks/deleteUser";
 import Image from "next/image";
 import { User } from "@/types/users";
+import { toast } from "sonner";
 
 export default function UsersPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
+  const [undoStack, setUndoStack] = useState<
+    { users: User[]; timeoutId: NodeJS.Timeout }[]
+  >([]);
 
-  const { data: users,isLoading, isError, error} = useQuery<User[], Error>({
+  const queryClient = useQueryClient();
+  const {
+    data: users,
+    isLoading,
+    isError,
+    error,
+  } = useQuery<User[], Error>({
     queryKey: ["users"],
     queryFn: getUsers,
   });
 
   const deleteUserMutation = useDeleteUser();
 
-  if (isLoading) {
+  if (isLoading)
     return (
       <div className="flex items-center justify-center h-screen">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
     );
-  }
 
-  if (isError) {
+  if (isError)
     return (
       <div className="flex flex-col items-center justify-center h-screen text-destructive">
         <AlertTriangle className="w-6 h-6 mb-2" />
@@ -41,11 +56,64 @@ export default function UsersPage() {
         </p>
       </div>
     );
-  }
+
+  // Select all toggle
+  const toggleSelectAll = () => {
+    if (!users) return;
+    if (selectedUsers.length === users.length) {
+      setSelectedUsers([]);
+    } else {
+      setSelectedUsers(users);
+    }
+  };
+
+  const toggleSelectUser = (user: User) => {
+    if (selectedUsers.find((u) => u.id === user.id)) {
+      setSelectedUsers((prev) => prev.filter((u) => u.id !== user.id));
+    } else {
+      setSelectedUsers((prev) => [...prev, user]);
+    }
+  };
+
+  // Bulk delete with undo
+  const handleBulkDelete = () => {
+    if (selectedUsers.length === 0) return;
+
+    const usersToDelete = [...selectedUsers];
+    setSelectedUsers([]);
+
+    // Optimistically remove from UI
+    queryClient.setQueryData<User[]>(["users"], (old) =>
+      old?.filter((u) => !usersToDelete.find((d) => d.id === u.id))
+    );
+
+    // Undo timeout
+    const timeoutId = setTimeout(() => {
+      usersToDelete.forEach((user) => deleteUserMutation.mutate(user.id));
+      setUndoStack((prev) => prev.filter((u) => u.timeoutId !== timeoutId));
+    }, 5000);
+
+    setUndoStack((prev) => [...prev, { users: usersToDelete, timeoutId }]);
+
+    toast(`Deleted ${usersToDelete.length} user(s)`, {
+      action: {
+        label: "Undo",
+        onClick: () => {
+          clearTimeout(timeoutId);
+          queryClient.setQueryData<User[]>(["users"], (old) => [
+            ...(old || []),
+            ...usersToDelete,
+          ]);
+          setUndoStack((prev) => prev.filter((u) => u.timeoutId !== timeoutId));
+          toast.success("Restored deleted users");
+        },
+      },
+    });
+  };
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-8 space-y-4">
+      <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-semibold tracking-tight">
           User Management
         </h1>
@@ -63,10 +131,31 @@ export default function UsersPage() {
         </Dialog>
       </div>
 
+      {selectedUsers.length > 0 && (
+        <div className="flex justify-end mb-2">
+          <Button
+            variant="destructive"
+            onClick={handleBulkDelete}
+            className="flex items-center gap-2"
+          >
+            <Trash2 className="w-4 h-4" /> Delete {selectedUsers.length}{" "}
+            selected
+          </Button>
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-lg border bg-card shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-muted-foreground">
             <tr className="text-left">
+              <th className="px-4 py-3 font-medium">
+                <input
+                  type="checkbox"
+                  checked={selectedUsers.length === users?.length}
+                  onChange={toggleSelectAll}
+                  className="rounded border-gray-300"
+                />
+              </th>
               <th className="px-4 py-3 font-medium">Avatar</th>
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">Email</th>
@@ -85,19 +174,25 @@ export default function UsersPage() {
                 className="border-b last:border-none hover:bg-muted/30 transition-colors"
               >
                 <td className="px-4 py-3">
-                  <div className="flex items-center justify-center">
-                    <Image
-                      width={40}
-                      height={40}
-                      src={
-                        user.avatar && user.avatar.startsWith("http")
-                          ? user.avatar
-                          : "/placeholder-avatar.png"
-                      }
-                      alt={user.name}
-                      className="rounded-full object-cover w-10 h-10 border"
-                    />
-                  </div>
+                  <input
+                    type="checkbox"
+                    checked={!!selectedUsers.find((u) => u.id === user.id)}
+                    onChange={() => toggleSelectUser(user)}
+                    className="rounded border-gray-300"
+                  />
+                </td>
+                <td className="px-4 py-3 flex justify-center">
+                  <Image
+                    width={40}
+                    height={40}
+                    src={
+                      user.avatar && user.avatar.startsWith("http")
+                        ? user.avatar
+                        : "/placeholder-avatar.png"
+                    }
+                    alt={user.name}
+                    className="rounded-full object-cover w-10 h-10 border"
+                  />
                 </td>
                 <td className="px-4 py-3 font-medium">{user.name}</td>
                 <td className="px-4 py-3">{user.email}</td>
@@ -113,6 +208,7 @@ export default function UsersPage() {
                   {user.bio || "-"}
                 </td>
                 <td className="px-4 py-3 flex justify-center gap-2">
+                  {/* Edit Dialog */}
                   <Dialog
                     open={editOpen && selectedUser?.id === user.id}
                     onOpenChange={(open) => {
@@ -141,18 +237,33 @@ export default function UsersPage() {
                     </DialogContent>
                   </Dialog>
 
+                  {/* Single Delete */}
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => deleteUserMutation.mutate(user.id)}
-                    disabled={deleteUserMutation.isPending}
                     className="text-destructive hover:bg-destructive/10"
+                    onClick={() => {
+                      if (confirm(`Delete ${user.name}?`)) {
+                        deleteUserMutation.mutate(user.id, {
+                          onMutate: async () => {
+                            const prev = queryClient.getQueryData<User[]>([
+                              "users",
+                            ]);
+                            queryClient.setQueryData<User[]>(["users"], (old) =>
+                              old?.filter((u) => u.id !== user.id)
+                            );
+                            return { prev };
+                          },
+                          onError: (err, _variables, context) => {
+                            if (context?.prev)
+                              queryClient.setQueryData(["users"], context.prev);
+                            toast.error("Failed to delete user");
+                          },
+                        });
+                      }
+                    }}
                   >
-                    {deleteUserMutation.isPending ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
+                    <Trash2 className="w-4 h-4" />
                   </Button>
                 </td>
               </tr>
