@@ -41,9 +41,10 @@ export default function AddUser({ onClose }: AddUserProps) {
         name: "",
         email: "",
         phone: "",
-        role: "",
-        status: "",
+        role: "User",
+        status: "Active",
         avatar: "",
+        bio: "",
       });
     },
     onError: () => toast.error("Failed to create user."),
@@ -142,6 +143,15 @@ export default function AddUser({ onClose }: AddUserProps) {
           value={form.avatar}
           onChange={(e) => setForm({ ...form, avatar: e.target.value })}
           placeholder="https://example.com/avatar.png"
+        />
+      </div>
+      <div>
+        <Label>Bio</Label>
+        <Input
+          value={form.bio}
+          onChange={(e) => setForm({ ...form, bio: e.target.value })}
+          placeholder="Short bio"
+          required
         />
       </div>
 
