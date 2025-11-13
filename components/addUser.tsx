@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createUser } from "@/lib/api";
+import { User } from "@/types/users";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import {
@@ -20,13 +21,14 @@ interface AddUserProps {
 
 export default function AddUser({ onClose }: AddUserProps) {
   const queryClient = useQueryClient();
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<Omit<User, "id" | "createdAt">>({
     name: "",
     email: "",
     phone: "",
-    role: "",
-    status: "",
+    role: "User",
+    status: "Active",
     avatar: "",
+    bio: "",
   });
 
   const createMutation = useMutation({
