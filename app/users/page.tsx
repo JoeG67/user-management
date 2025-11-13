@@ -56,8 +56,6 @@ export default function UsersPage() {
         </p>
       </div>
     );
-
-  // Select all toggle
   const toggleSelectAll = () => {
     if (!users) return;
     if (selectedUsers.length === users.length) {
@@ -74,20 +72,16 @@ export default function UsersPage() {
       setSelectedUsers((prev) => [...prev, user]);
     }
   };
-
-  // Bulk delete with undo
   const handleBulkDelete = () => {
     if (selectedUsers.length === 0) return;
 
     const usersToDelete = [...selectedUsers];
     setSelectedUsers([]);
 
-    // Optimistically remove from UI
     queryClient.setQueryData<User[]>(["users"], (old) =>
       old?.filter((u) => !usersToDelete.find((d) => d.id === u.id))
     );
 
-    // Undo timeout
     const timeoutId = setTimeout(() => {
       usersToDelete.forEach((user) => deleteUserMutation.mutate(user.id));
       setUndoStack((prev) => prev.filter((u) => u.timeoutId !== timeoutId));
@@ -208,7 +202,6 @@ export default function UsersPage() {
                   {user.bio || "-"}
                 </td>
                 <td className="px-4 py-3 flex justify-center gap-2">
-                  {/* Edit Dialog */}
                   <Dialog
                     open={editOpen && selectedUser?.id === user.id}
                     onOpenChange={(open) => {
@@ -236,31 +229,47 @@ export default function UsersPage() {
                       )}
                     </DialogContent>
                   </Dialog>
-
-                  {/* Single Delete */}
                   <Button
                     variant="ghost"
                     size="icon"
                     className="text-destructive hover:bg-destructive/10"
                     onClick={() => {
-                      if (confirm(`Delete ${user.name}?`)) {
-                        deleteUserMutation.mutate(user.id, {
-                          onMutate: async () => {
-                            const prev = queryClient.getQueryData<User[]>([
-                              "users",
-                            ]);
-                            queryClient.setQueryData<User[]>(["users"], (old) =>
-                              old?.filter((u) => u.id !== user.id)
+                      if (!confirm(`Delete ${user.name}?`)) return;
+
+                      const userToDelete = user;
+
+                      queryClient.setQueryData<User[]>(["users"], (old) =>
+                        old?.filter((u) => u.id !== userToDelete.id)
+                      );
+
+                      const timeoutId = setTimeout(() => {
+                        deleteUserMutation.mutate(userToDelete.id);
+                        setUndoStack((prev) =>
+                          prev.filter((u) => u.timeoutId !== timeoutId)
+                        );
+                      }, 5000);
+
+                      setUndoStack((prev) => [
+                        ...prev,
+                        { users: [userToDelete], timeoutId },
+                      ]);
+
+                      toast(`Deleted ${userToDelete.name}`, {
+                        action: {
+                          label: "Undo",
+                          onClick: () => {
+                            clearTimeout(timeoutId);
+                            queryClient.setQueryData<User[]>(
+                              ["users"],
+                              (old) => [...(old || []), userToDelete]
                             );
-                            return { prev };
+                            setUndoStack((prev) =>
+                              prev.filter((u) => u.timeoutId !== timeoutId)
+                            );
+                            toast.success("Restored deleted user");
                           },
-                          onError: (err, _variables, context) => {
-                            if (context?.prev)
-                              queryClient.setQueryData(["users"], context.prev);
-                            toast.error("Failed to delete user");
-                          },
-                        });
-                      }
+                        },
+                      });
                     }}
                   >
                     <Trash2 className="w-4 h-4" />
