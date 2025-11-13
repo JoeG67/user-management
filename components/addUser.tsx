@@ -122,20 +122,41 @@ export default function AddUser({ onClose }: AddUserProps) {
       </div>
       <div>
         <Label>Role</Label>
-        <Input
+        <select
           value={form.role}
-          onChange={(e) => setForm({ ...form, role: e.target.value })}
+          onChange={(e) =>
+            setForm({
+              ...form,
+              role: e.target.value as "Admin" | "User" | "Guest",
+            })
+          }
           required
-        />
+          className="input-class" // or your Input styling
+        >
+          <option value="Admin">Admin</option>
+          <option value="User">User</option>
+          <option value="Guest">Guest</option>
+        </select>
       </div>
+
       <div>
         <Label>Status</Label>
-        <Input
+        <select
           value={form.status}
-          onChange={(e) => setForm({ ...form, status: e.target.value })}
+          onChange={(e) =>
+            setForm({
+              ...form,
+              status: e.target.value as "Active" | "Inactive",
+            })
+          }
           required
-        />
+          className="input-class"
+        >
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+        </select>
       </div>
+
       <div>
         <Label>Avatar URL</Label>
         <Input
